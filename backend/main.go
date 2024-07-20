@@ -12,25 +12,27 @@ import (
 )
 
 type User struct {
-	id    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Id       int    `json:"id"`
+	Name		 string `json:"name"`
+	Email    string `json:"email"`
 }
 
+// main function
 func main() {
-	// Connect to the database
+	//connect to database
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	//  create table if not exists
+
+	// create table if not exists
 	_, err = db.Exec("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT, email TEXT)")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create a new router
+	// create router
 	router := mux.NewRouter()
 	router.HandleFunc("/api/go/users", getUsers(db)).Methods("GET")
 	router.HandleFunc("/api/go/users", createUser(db)).Methods("POST")
@@ -38,13 +40,11 @@ func main() {
 	router.HandleFunc("/api/go/users/{id}", updateUser(db)).Methods("PUT")
 	router.HandleFunc("/api/go/users/{id}", deleteUser(db)).Methods("DELETE")
 
-	// wrap the router with the CORS and JSON middleware
-
+	// wrap the router with CORS and JSON content type middlewares
 	enhancedRouter := enableCORS(jsonContentTypeMiddleware(router))
 
-	// Start the server
-	log.Fatal(http.ListenAndServe(":8080", enhancedRouter))
-
+	// start server
+	log.Fatal(http.ListenAndServe(":8000", enhancedRouter))
 }
 
 func enableCORS(next http.Handler) http.Handler {
@@ -66,10 +66,17 @@ func enableCORS(next http.Handler) http.Handler {
 
 }
 
+func jsonContentTypeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set JSON Content-Type
+		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // get all users
 func getUsers(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		//row
 		rows, err := db.Query("SELECT * FROM users")
 		if err != nil {
 			log.Fatal(err)
@@ -148,5 +155,29 @@ func updateUser(db *sql.DB) http.HandlerFunc {
 
 		// Send the updated user data in the response
 		json.NewEncoder(w).Encode(updatedUser)
+	}
+}
+
+// delete user
+func deleteUser(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		var u User
+		err := db.QueryRow("SELECT * FROM users WHERE id = $1", id).Scan(&u.Id, &u.Name, &u.Email)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		} else {
+			_, err := db.Exec("DELETE FROM users WHERE id = $1", id)
+			if err != nil {
+				//todo : fix error handling
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			json.NewEncoder(w).Encode("User deleted")
+		}
 	}
 }
